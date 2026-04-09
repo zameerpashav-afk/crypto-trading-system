@@ -1,14 +1,14 @@
-from dotenv import load_dotenv
+import asyncio
 import os
-import telegram
+from telegram import Bot
 
-# Load .env variables
-load_dotenv()
-
+# Load from environment
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID"))
 
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
+async def send_test():
+    bot = Bot(token=TELEGRAM_TOKEN)
+    await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="✅ Telegram Bot Test Successful!")
 
-bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="✅ Telegram Bot Test Successful!")
-print("Message sent!")
+# Run the async function
+asyncio.run(send_test())
