@@ -19,17 +19,23 @@ from engines.dex_scanner import compute_dex_score
 from utils.coin_selector import get_top_coins
 
 # -------------------------
-# FILTER FUNCTION
+# FILTER FUNCTION (UPDATED)
 # -------------------------
 def passes_filters(trend):
     whale = trend["components"]["whale"]["score"]
     dev = trend["components"]["dev"]["score"]
     unlock = trend["components"]["unlock"]["score"]
 
-    # Tweak thresholds as needed
-    if dev > 0.6 and whale > 0.6 and unlock > 0.4:
-        return True
-    return False
+    # Weighted score instead of strict filtering
+    filter_score = (
+        whale * 0.4 +
+        dev * 0.4 +
+        unlock * 0.2
+    )
+
+    # Lower threshold → more signals
+    return filter_score > 0.35
+
 
 # -------------------------
 # SIGNAL FUNCTION
@@ -42,14 +48,15 @@ def generate_signal(combined_score):
     else:
         return "HOLD"
 
+
 # -------------------------
 # MAIN PIPELINE
 # -------------------------
 def run():
     candidates = []
 
-    # Top coins
-    coins = get_top_coins(limit=200)
+    # Get top coins
+    coins = get_top_coins(limit=100)
 
     for coin in coins:
         try:
@@ -59,26 +66,30 @@ def run():
 
             print(f"\nChecking {symbol}...")
 
-            # Compute trend score
+            # TREND
             trend = compute_trend_score(symbol=whale_symbol, coin_id=coin_id)
             trend_score = trend["trend_score"]
 
-            # Apply filters
+            whale = trend["components"]["whale"]["score"]
+            dev = trend["components"]["dev"]["score"]
+            unlock = trend["components"]["unlock"]["score"]
+
+            print(f"Scores → Whale: {whale} | Dev: {dev} | Unlock: {unlock}")
+
+            # FILTER
             if not passes_filters(trend):
-                print("❌ Skipped (did not pass filters)")
+                print("❌ Skipped (low combined fundamentals)")
                 continue
 
-            # Compute DEX score
+            # DEX (NO HARD FILTER)
             dex = compute_dex_score(whale_symbol)
-            if dex["score"] < 0.3:
-                print("❌ Skipped (low DEX activity)")
-                continue
+            print(f"DEX Score → {dex['score']}")
 
-            # Compute TA score
+            # TA
             ta = compute_ta_score(symbol)
             ta_score = ta["score"]
 
-            # Combine scores
+            # FINAL SCORE
             combined_score = (
                 trend_score * 0.5 +
                 ta_score * 0.3 +
@@ -89,14 +100,14 @@ def run():
 
             candidates.append({
                 "symbol": symbol,
-                "trend_score": trend_score,
-                "ta_score": ta_score,
-                "dex_score": dex["score"],
-                "combined_score": combined_score,
+                "trend_score": round(trend_score, 2),
+                "ta_score": round(ta_score, 2),
+                "dex_score": round(dex["score"], 2),
+                "combined_score": round(combined_score, 2),
                 "signal": signal
             })
 
-            print(f"✅ Candidate → Trend: {trend_score} | TA: {ta_score} | DEX: {dex['score']} | Signal: {signal}")
+            print(f"✅ Candidate → Combined: {combined_score:.2f} | Signal: {signal}")
 
         except Exception as e:
             print(f"Error processing {symbol}: {e}")
@@ -106,35 +117,57 @@ def run():
     # -------------------------
     top5 = sorted(candidates, key=lambda x: x["combined_score"], reverse=True)[:5]
 
+    message = ""
+
     if not top5:
-        print("\n⚠️ No coins passed filters today.")
-        return
+        print("\n⚠️ No strong coins found.")
+        message = "⚠️ Bot running but no strong signals found (market quiet)"
+    else:
+        print("\n🔥 TOP 5 PICKS 🔥")
+        message = "🔥 TOP 5 CRYPTO ALERTS 🔥\n"
 
-    print("\n🔥 TOP 5 PICKS 🔥")
-    message = "🔥 TOP 5 CRYPTO ALERTS 🔥\n"
-    for coin in top5:
-        line = f"{coin['symbol']} | Trend: {coin['trend_score']} | TA: {coin['ta_score']} | DEX: {coin['dex_score']} | Signal: {coin['signal']}"
-        print(line)
-        message += line + "\n"
-
-    # Send Telegram alert
-    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-
-    # Save top5 to CSV
-    filename = "top5_signals.csv"
-    with open(filename, mode="w", newline="") as file:
-        writer = csv.writer(file)
-        writer.writerow(["datetime", "symbol", "trend_score", "ta_score", "dex_score", "combined_score", "signal"])
         for coin in top5:
+            line = (
+                f"{coin['symbol']} | "
+                f"Trend: {coin['trend_score']} | "
+                f"TA: {coin['ta_score']} | "
+                f"DEX: {coin['dex_score']} | "
+                f"Signal: {coin['signal']}"
+            )
+            print(line)
+            message += line + "\n"
+
+    # -------------------------
+    # TELEGRAM (SAFE SEND)
+    # -------------------------
+    try:
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+        print("✅ Telegram sent")
+    except Exception as e:
+        print("❌ Telegram error:", e)
+
+    # -------------------------
+    # SAVE CSV
+    # -------------------------
+    if top5:
+        filename = "top5_signals.csv"
+        with open(filename, mode="w", newline="") as file:
+            writer = csv.writer(file)
             writer.writerow([
-                datetime.now(),
-                coin["symbol"],
-                coin["trend_score"],
-                coin["ta_score"],
-                coin["dex_score"],
-                coin["combined_score"],
-                coin["signal"]
+                "datetime", "symbol", "trend_score",
+                "ta_score", "dex_score", "combined_score", "signal"
             ])
+            for coin in top5:
+                writer.writerow([
+                    datetime.now(),
+                    coin["symbol"],
+                    coin["trend_score"],
+                    coin["ta_score"],
+                    coin["dex_score"],
+                    coin["combined_score"],
+                    coin["signal"]
+                ])
+
 
 # -------------------------
 # ENTRY POINT
