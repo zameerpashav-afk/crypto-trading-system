@@ -6,13 +6,12 @@ from datetime import datetime
 from dotenv import load_dotenv
 import telegram
 
-# Load environment variables
+# Load env
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Safety check (GitHub Actions safe fail)
 if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
     print("❌ Missing Telegram credentials")
     exit()
@@ -27,38 +26,40 @@ from utils.coin_selector import get_top_coins
 
 
 # -------------------------
-# FILTER FUNCTION (IMPROVED)
+# FILTER (soft scoring)
 # -------------------------
 def passes_filters(whale, dev, unlock):
     filter_score = (
-        whale * 0.4 +
-        dev * 0.4 +
+        whale * 0.5 +
+        dev * 0.3 +
         unlock * 0.2
     )
-    return filter_score > 0.35
+    return filter_score > 0.25
 
 
 # -------------------------
-# SIGNAL FUNCTION
+# SIGNAL ENGINE
 # -------------------------
 def generate_signal(score):
-    if score > 0.8:
+    if score > 0.75:
         return "STRONG BUY"
-    elif score > 0.7:
+    elif score > 0.65:
         return "BUY"
-    elif score > 0.55:
+    elif score > 0.50:
         return "WATCH"
-    else:
-        return "HOLD"
+    return "HOLD"
 
 
 # -------------------------
 # MAIN PIPELINE
 # -------------------------
 def run():
-    candidates = []
 
     coins = get_top_coins(limit=50)
+    candidates = []
+
+    print(f"\n🚀 Starting scan at {datetime.now()}")
+    print(f"Scanning {len(coins)} coins...\n")
 
     for coin in coins:
         try:
@@ -66,53 +67,43 @@ def run():
             whale_symbol = coin["whale_symbol"]
             coin_id = coin["coingecko_id"]
 
-            print(f"\nChecking {symbol}...")
+            print(f"Checking {symbol}...")
 
             # -------------------------
-            # TREND ENGINE
+            # TREND
             # -------------------------
             trend = compute_trend_score(symbol=whale_symbol, coin_id=coin_id)
 
             trend_score = trend["trend_score"]
-
             whale = trend["components"]["whale"]["score"]
             dev = trend["components"]["dev"]["score"]
             unlock = trend["components"]["unlock"]["score"]
 
-            print(f"Scores → Whale: {whale:.2f} | Dev: {dev:.2f} | Unlock: {unlock:.2f}")
+            print(f"Scores → W:{whale:.2f} D:{dev:.2f} U:{unlock:.2f}")
 
-            # -------------------------
-            # FILTERING (SOFT)
-            # -------------------------
+            # Soft filter
             if not passes_filters(whale, dev, unlock):
-                print("❌ Skipped (weak fundamentals)")
+                print("❌ Skipped (fundamentals weak)")
                 continue
 
             # -------------------------
-            # DEX SCANNER
+            # DEX
             # -------------------------
-            try:
-                dex = compute_dex_score(whale_symbol)
-                dex_score = dex["score"]
-            except Exception as e:
-                print("DEX error:", e)
-                dex_score = 0
+            dex = compute_dex_score(whale_symbol)
+            dex_score = dex["score"]
 
-            print(f"DEX Score → {dex_score:.2f}")
-
-            # Soft DEX requirement (NOT strict)
-            if dex_score < 0.15:
-                print("❌ Skipped (low DEX activity)")
+            if dex_score < 0.1:
+                print("❌ Skipped (DEX too low)")
                 continue
 
             # -------------------------
-            # TECHNICAL ANALYSIS
+            # TA (SAFE)
             # -------------------------
             ta = compute_ta_score(symbol)
             ta_score = ta["score"]
 
             # -------------------------
-            # COMBINED SCORE (IMPROVED)
+            # COMBINED SCORE
             # -------------------------
             combined_score = (
                 trend_score * 0.45 +
@@ -121,7 +112,7 @@ def run():
                 unlock * 0.10
             )
 
-            # Momentum boost
+            # momentum boost
             if trend_score > 0.6 and ta_score > 0.6:
                 combined_score += 0.05
 
@@ -129,7 +120,7 @@ def run():
 
             signal = generate_signal(combined_score)
 
-            print(f"✅ Candidate → Score: {combined_score:.2f} | Signal: {signal}")
+            print(f"✅ {symbol} → {combined_score:.2f} | {signal}")
 
             candidates.append({
                 "symbol": symbol,
@@ -142,47 +133,56 @@ def run():
             })
 
         except Exception as e:
-            print(f"Error processing {symbol}: {e}")
+            print(f"Error {symbol}: {e}")
 
     # -------------------------
-    # SORT + TOP 5
+    # TOP 5
     # -------------------------
     candidates = sorted(candidates, key=lambda x: x["combined_score"], reverse=True)
     top5 = candidates[:5]
 
-    print("\n==============================")
+    # BUY ONLY LIST
+    buy_coins = [c for c in top5 if c["signal"] in ["BUY", "STRONG BUY"]]
 
     # -------------------------
-    # TELEGRAM MESSAGE
+    # TELEGRAM MESSAGE (ALWAYS SENT)
     # -------------------------
-    if not top5:
-        message = "⚠️ Bot running but no strong signals found (market quiet)"
-        print(message)
-    else:
-        print("🔥 TOP 5 PICKS 🔥")
+    message = f"""
+📊 CRYPTO SCAN COMPLETE
 
-        message = "🚀 TOP CRYPTO SIGNALS 🚀\n\n"
+Time: {datetime.now()}
+Coins scanned: {len(coins)}
+Candidates found: {len(candidates)}
+Top 5: {len(top5)}
+BUY signals: {len(buy_coins)}
 
-        for i, coin in enumerate(top5, 1):
-            line = (
-                f"{i}. {coin['symbol']}\n"
-                f"Score: {coin['combined_score']} | Signal: {coin['signal']}\n"
-                f"Trend: {coin['trend_score']} | TA: {coin['ta_score']} | "
-                f"DEX: {coin['dex_score']} | Unlock: {coin['unlock_score']}\n"
-                "-------------------------\n"
+-------------------------
+"""
+
+    if len(top5) > 0:
+        message += "\n🔥 TOP 5 PICKS 🔥\n\n"
+        for i, c in enumerate(top5, 1):
+            message += (
+                f"{i}. {c['symbol']}\n"
+                f"Score: {c['combined_score']} | {c['signal']}\n"
+                f"TA:{c['ta_score']} DEX:{c['dex_score']} UNLOCK:{c['unlock_score']}\n"
+                "-------------------\n"
             )
+    else:
+        message += "\n⚠️ No valid coins found in this scan.\n"
 
-            print(line)
-            message += line
-
-    # Trim message for Telegram safety
-    message = message[:4000]
+    if len(buy_coins) > 0:
+        message += "\n🚀 BUY SIGNALS 🚀\n\n"
+        for c in buy_coins:
+            message += f"{c['symbol']} → {c['combined_score']} ({c['signal']})\n"
+    else:
+        message += "\n⚠️ No BUY signals in this cycle.\nMarket is neutral.\n"
 
     # -------------------------
-    # SEND TELEGRAM
+    # SEND TELEGRAM (ALWAYS)
     # -------------------------
     try:
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message[:4000])
         print("✅ Telegram sent")
     except Exception as e:
         print("❌ Telegram error:", e)
@@ -198,21 +198,20 @@ def run():
                 "ta_score", "dex_score", "unlock_score",
                 "combined_score", "signal"
             ])
-            for coin in top5:
+
+            for c in top5:
                 writer.writerow([
                     datetime.now(),
-                    coin["symbol"],
-                    coin["trend_score"],
-                    coin["ta_score"],
-                    coin["dex_score"],
-                    coin["unlock_score"],
-                    coin["combined_score"],
-                    coin["signal"]
+                    c["symbol"],
+                    c["trend_score"],
+                    c["ta_score"],
+                    c["dex_score"],
+                    c["unlock_score"],
+                    c["combined_score"],
+                    c["signal"]
                 ])
 
 
-# -------------------------
-# ENTRY POINT
-# -------------------------
+# ENTRY
 if __name__ == "__main__":
     run()
