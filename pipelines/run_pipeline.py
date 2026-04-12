@@ -55,7 +55,7 @@ def generate_signal(score):
 # -------------------------
 def run():
 
-    coins = get_top_coins(limit=50)
+    coins = get_top_coins(limit=200)
     candidates = []
 
     print(f"\n🚀 Starting scan at {datetime.now()}")
