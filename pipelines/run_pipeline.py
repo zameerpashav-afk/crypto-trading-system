@@ -25,16 +25,16 @@ from engines.dex_scanner import compute_dex_score
 from utils.coin_selector import get_top_coins
 
 
-# -------------------------
-# FILTER (soft scoring)
-# -------------------------
+# V2 Improvement: Relaxed filters to allow TA-driven leads
 def passes_filters(whale, dev, unlock):
+    # If we have NO fundamental data, we still allow the coin to proceed 
+    # if it passes a very low bar, rather than blocking it entirely.
     filter_score = (
         whale * 0.5 +
         dev * 0.3 +
         unlock * 0.2
     )
-    return filter_score > 0.25
+    return filter_score >= 0.0  # V2: Don't hard-block based on fundamental scarcity
 
 
 # -------------------------
@@ -92,7 +92,8 @@ def run():
             dex = compute_dex_score(whale_symbol)
             dex_score = dex["score"]
 
-            if dex_score < 0.1:
+            # V2: Reduced DEX requirement for major exchange coins
+            if dex_score < 0.01: 
                 print("❌ Skipped (DEX too low)")
                 continue
 
@@ -105,9 +106,10 @@ def run():
             # -------------------------
             # COMBINED SCORE
             # -------------------------
+            # V2: Shifted weight more towards TA (0.50) and Momentum
             combined_score = (
-                trend_score * 0.45 +
-                ta_score * 0.30 +
+                trend_score * 0.25 +
+                ta_score * 0.50 +
                 dex_score * 0.15 +
                 unlock * 0.10
             )
