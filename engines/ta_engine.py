@@ -74,8 +74,12 @@ def compute_ta_score(symbol):
         score = 0
 
         # RSI Logic
+        # V2 Improvement: Add points for bullish momentum (RSI > 50) 
+        # instead of just looking for oversold (< 30)
         if latest["rsi"] < 30:
             score += 0.4
+        elif 50 < latest["rsi"] < 65:
+            score += 0.5  # Momentum zone
         elif latest["rsi"] > 70:
             score -= 0.4
 
@@ -85,8 +89,13 @@ def compute_ta_score(symbol):
         else:
             score -= 0.6
 
-        # Normalize (-1 → 1) into (0 → 1)
-        score = (score + 1) / 2
+        # V2 Improvement: Price over EMA20 is a strong breakout signal
+        if latest["close"] > latest["ema20"]:
+            score += 0.3
+        
+        # Normalize (-1 → 1.4) into (0 → 1)
+        # Max theoretical score is now 0.5 (RSI) + 0.6 (EMA) + 0.3 (Price) = 1.4
+        score = (score + 1) / 2.4
         score = max(0, min(1, score))
 
         return {
