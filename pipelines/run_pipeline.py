@@ -1,7 +1,12 @@
 # pipelines/run_pipeline.py
 
 import os
+import sys
 import csv
+
+# Add workspace and repo to path
+sys.path.append("/home/kabir/.openclaw/workspace/crypto-trading-system")
+
 from datetime import datetime
 from dotenv import load_dotenv
 import telegram
@@ -207,7 +212,8 @@ BUY signals: {len(buy_coins)}
     # SEND TELEGRAM (ALWAYS)
     # -------------------------
     try:
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message[:4000])
+        import asyncio
+        asyncio.run(bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message[:4000]))
         print("✅ Telegram sent")
     except Exception as e:
         print("❌ Telegram error:", e)

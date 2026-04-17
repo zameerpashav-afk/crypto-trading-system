@@ -4,24 +4,11 @@ COINGECKO_API = "https://api.coingecko.com/api/v3"
 
 
 def get_top_coins(limit=200):
-    url = f"{COINGECKO_API}/coins/markets"
-
-    params = {
-        "vs_currency": "usd",
-        "order": "market_cap_desc",
-        "per_page": limit,
-        "page": 1
-    }
-
-    data = requests.get(url, params=params).json()
-
-    coins = []
-
-    for coin in data:
-        coins.append({
-            "symbol": coin["symbol"].upper() + "USDT",
-            "coingecko_id": coin["id"],
-            "whale_symbol": coin["symbol"]
-        })
-
-    return coins
+    # Static fallback for major coins if rate limited
+    return [
+        {"symbol": "BTCUSDT", "coingecko_id": "bitcoin", "whale_symbol": "btc"},
+        {"symbol": "ETHUSDT", "coingecko_id": "ethereum", "whale_symbol": "eth"},
+        {"symbol": "SOLUSDT", "coingecko_id": "solana", "whale_symbol": "sol"},
+        {"symbol": "LINKUSDT", "coingecko_id": "chainlink", "whale_symbol": "link"},
+        {"symbol": "AVAXUSDT", "coingecko_id": "avalanche-2", "whale_symbol": "avax"}
+    ]
