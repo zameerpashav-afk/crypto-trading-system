@@ -124,4 +124,8 @@ def compute_ta_score(symbol):
 # TEST ONLY (SAFE)
 # -------------------------
 if __name__ == "__main__":
-    print(compute_ta_score("BTCUSDT"))
+    import sys
+    symbol = sys.argv[1] if len(sys.argv) > 1 else "BTCUSDT"
+    print(f"--- TA Engine Test: {symbol} ---")
+    res = compute_ta_score(symbol)
+    print(res)
