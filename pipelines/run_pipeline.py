@@ -25,16 +25,16 @@ from engines.dex_scanner import compute_dex_score
 from utils.coin_selector import get_top_coins
 
 
-# -------------------------
-# FILTER (soft scoring)
-# -------------------------
+# V2 Improvement: Relaxed filters to allow TA-driven leads
 def passes_filters(whale, dev, unlock):
+    # If we have NO fundamental data, we still allow the coin to proceed 
+    # if it passes a very low bar, rather than blocking it entirely.
     filter_score = (
         whale * 0.5 +
         dev * 0.3 +
         unlock * 0.2
     )
-    return filter_score > 0.25
+    return filter_score >= 0.0  # V2: Don't hard-block based on fundamental scarcity
 
 
 # -------------------------
@@ -92,25 +92,49 @@ def run():
             dex = compute_dex_score(whale_symbol)
             dex_score = dex["score"]
 
-            if dex_score < 0.1:
-                print("❌ Skipped (DEX too low)")
+            # V2: Reduced DEX requirement for major exchange coins
+            if dex_score < 0.01: 
+                print(f"❌ Skipped {symbol} (DEX too low: {dex_score})")
                 continue
 
             # -------------------------
             # TA (SAFE)
             # -------------------------
-            ta = compute_ta_score(symbol)
-            ta_score = ta["score"]
+            ta_res = compute_ta_score(symbol)
+            ta_score = ta_res["score"]
 
             # -------------------------
             # COMBINED SCORE
             # -------------------------
+            # V2: Shifted weight more towards TA (0.50) and Momentum
             combined_score = (
-                trend_score * 0.45 +
-                ta_score * 0.30 +
+                trend_score * 0.25 +
+                ta_score * 0.50 +
                 dex_score * 0.15 +
                 unlock * 0.10
             )
+
+            # momentum boost
+            if trend_score > 0.6 and ta_score > 0.6:
+                combined_score += 0.05
+
+            combined_score = min(combined_score, 1)
+
+            signal = generate_signal(combined_score)
+
+            print(f"✅ {symbol} → {combined_score:.2f} | {signal}")
+
+            candidates.append({
+                "symbol": symbol,
+                "trend_score": round(trend_score, 2),
+                "ta_score": round(ta_score, 2),
+                "dex_score": round(dex_score, 2),
+                "unlock_score": round(unlock, 2),
+                "combined_score": round(combined_score, 2),
+                "signal": signal,
+                "debug_rsi": ta_res["signals"].get("rsi"),
+                "debug_trend": "UP" if ta_res["signals"].get("ema20", 0) > ta_res["signals"].get("ema50", 0) else "DOWN"
+            })
 
             # momentum boost
             if trend_score > 0.6 and ta_score > 0.6:
@@ -165,7 +189,8 @@ BUY signals: {len(buy_coins)}
             message += (
                 f"{i}. {c['symbol']}\n"
                 f"Score: {c['combined_score']} | {c['signal']}\n"
-                f"TA:{c['ta_score']} DEX:{c['dex_score']} UNLOCK:{c['unlock_score']}\n"
+                f"TA:{c['ta_score']} DEX:{c['dex_score']} UNL:{c['unlock_score']}\n"
+                f"DEBUG: RSI:{c.get('debug_rsi')} EMA:{c.get('debug_trend')}\n"
                 "-------------------\n"
             )
     else:
