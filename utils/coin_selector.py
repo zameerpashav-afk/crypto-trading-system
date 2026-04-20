@@ -4,6 +4,27 @@ COINGECKO_API = "https://api.coingecko.com/api/v3"
 
 
 def get_top_coins(limit=200):
+    # 1. First, try to get Binance Top Gainers/Active coins to catch "hot" opportunities
+    try:
+        binance_data = requests.get("https://api.binance.com/api/v3/ticker/24hr").json()
+        # Filter for USDT pairs and sort by priceChangePercent
+        hot_coins = [
+            {
+                "symbol": t["symbol"],
+                "coingecko_id": t["symbol"].replace("USDT", "").lower(), # Heuristic
+                "whale_symbol": t["symbol"].replace("USDT", "").lower()
+            }
+            for t in binance_data 
+            if t["symbol"].endswith("USDT") and float(t["quoteVolume"]) > 1000000
+        ]
+        hot_coins = sorted(hot_coins, key=lambda x: next(t["priceChangePercent"] for t in binance_data if t["symbol"] == x["symbol"]), reverse=True)
+        # We take the top 20 hot coins to prioritize
+        hot_list = hot_coins[:20]
+    except Exception as e:
+        print(f"⚠️ Binance hot-scan error: {e}")
+        hot_list = []
+
+    # 2. Then try CoinGecko for market cap depth
     url = f"{COINGECKO_API}/coins/markets"
     params = {
         "vs_currency": "usd",
@@ -18,14 +39,18 @@ def get_top_coins(limit=200):
 
         # Check if we got a list of coins (success) or an error dict
         if isinstance(data, list):
-            coins = []
+            coins = hot_list # Start with hot coins
+            seen = {c["symbol"] for c in coins}
             for coin in data:
-                coins.append({
-                    "symbol": coin["symbol"].upper() + "USDT",
-                    "coingecko_id": coin["id"],
-                    "whale_symbol": coin["symbol"]
-                })
-            return coins
+                sym = coin["symbol"].upper() + "USDT"
+                if sym not in seen:
+                    coins.append({
+                        "symbol": sym,
+                        "coingecko_id": coin["id"],
+                        "whale_symbol": coin["symbol"]
+                    })
+                    seen.add(sym)
+            return coins[:limit]
         
         print(f"⚠️ CoinGecko API busy (Rate Limited). Using major coin fallback...")
     except Exception as e:
